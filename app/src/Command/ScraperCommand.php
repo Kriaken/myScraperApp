@@ -12,12 +12,10 @@ use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\Response;
 use Predis\Client;
 
-
 class ScraperCommand extends Command
 {
     private $redis;
     private $entityManager;
-
 
     public function __construct(Client $redis, EntityManagerInterface $entityManager)
     {
@@ -37,75 +35,89 @@ class ScraperCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
         {
+            //Get arguments
+            $registrationCode = $input->getArgument("registrationCode");
+            $clientIp = $input->getArgument("clientIp");
 
-    $registrationCode = $input->getArgument("registrationCode");
-    $clientIp = $input->getArgument("clientIp");
+            $client = HttpClient::create();
+            //Go to the page where results are shown and send POST request
+            $response = $client->request("POST", "https://rekvizitai.vz.lt/en/company-search/1/", ["body" => ["name" => "", "word" => "", "code" => $registrationCode, "codepvm" => "", "city" => "", "search_terms" => "", "street" => "", "employeesMin" => "", "employeesMax" => "", "salaryMin" => "", "salaryMax" => "", "debtMin" => "", "debtMax" => "", "transportMax" => "", "salesRevenueMin" => "", "salesRevenueMax" => "", "netProfitMin" => "", "netProfitMax" => "", "registeredFrom" => "", "registeredTo" => "", "order" => 1, "resetFilter" => 0, ], ]);
 
-    $client = HttpClient::create();
+            $statusCode = $response->getStatusCode();
+            $responseContent = $response->getContent();
 
-    $response = $client->request("POST", "https://rekvizitai.vz.lt/en/company-search/1/", ["body" => ["name" => "", "word" => "", "code" => $registrationCode, "codepvm" => "", "city" => "", "search_terms" => "", "street" => "", "employeesMin" => "", "employeesMax" => "", "salaryMin" => "", "salaryMax" => "", "debtMin" => "", "debtMax" => "", "transportMax" => "", "salesRevenueMin" => "", "salesRevenueMax" => "", "netProfitMin" => "", "netProfitMax" => "", "registeredFrom" => "", "registeredTo" => "", "order" => 1, "resetFilter" => 0, ], ]);
+            $crawler = new Crawler($responseContent);
+            //Process response
+            $scrapedData = $this->processSearchResponse($crawler, $statusCode);
+            //Save or update data if not null to database and add to Redis
+            if ($scrapedData !== null)
+            {
 
-    $statusCode = $response->getStatusCode();
-    $responseContent = $response->getContent();
+                $companyRepository = $this
+                    ->entityManager
+                    ->getRepository(Companies::class);
+                $company = $companyRepository->findOneBy(['registrationCode' => $scrapedData['registrationCode']]);
 
-    $crawler = new Crawler($responseContent);
+                if ($company)
+                {
+                    $company->setCompanyName($scrapedData['companyName']);
+                    $company->setCompanyVAT($scrapedData['companyVAT']);
+                    $company->setCompanyAddress($scrapedData['companyAddress']);
+                    $company->setCompanyTurnover($scrapedData['companyTurnover']);
+                }
+                else
+                {
+                    $company = new Companies();
 
-    $scrapedData = $this->processSearchResponse($crawler, $statusCode);
+                    $company->setCompanyName($scrapedData['companyName']);
+                    $company->setRegistrationCode((int)$scrapedData['registrationCode']);
+                    $company->setCompanyVAT($scrapedData['companyVAT']);
+                    $company->setCompanyAddress($scrapedData['companyAddress']);
+                    $company->setCompanyTurnover($scrapedData['companyTurnover']);
+                }
 
-    if ($scrapedData !== null) {
+                $this
+                    ->entityManager
+                    ->persist($company);
+                $this
+                    ->entityManager
+                    ->flush();
 
-        $companyRepository = $this->entityManager->getRepository(Companies::class);
-        $company = $companyRepository->findOneBy(['registrationCode' => $scrapedData['registrationCode']]);
+                $this->redis = new Client(['scheme' => 'tcp', 'host' => 'redis', 'port' => 6379, ]);
 
-        if ($company) {
-            $company->setCompanyName($scrapedData['companyName']);
-            $company->setCompanyVAT($scrapedData['companyVAT']);
-            $company->setCompanyAddress($scrapedData['companyAddress']);
-            $company->setCompanyTurnover($scrapedData['companyTurnover']);
+                $storedSession = $this
+                    ->redis
+                    ->get($clientIp);
+
+                $storedSession = json_decode($storedSession, true);
+
+                if ($storedSession)
+                {
+                    $storedSession[] = $registrationCode;
+
+                    $storedSession = json_encode($storedSession);
+
+                    $this
+                        ->redis
+                        ->set($clientIp, $storedSession, 'ex', 3600);
+                }
+                else
+                {
+                    $storedSession = [$registrationCode];
+
+                    $storedSession = json_encode($storedSession);
+
+                    $this
+                        ->redis
+                        ->set($clientIp, $storedSession, 'ex', 3600);
+                }
+
+                return Command::SUCCESS;
+            }
+            else {
+                return Command::FAILURE;
+            }
         }
-        else {
-            $company = new Companies();
-
-            $company->setCompanyName($scrapedData['companyName']);
-            $company->setRegistrationCode((int)$scrapedData['registrationCode']);
-            $company->setCompanyVAT($scrapedData['companyVAT']);
-            $company->setCompanyAddress($scrapedData['companyAddress']);
-            $company->setCompanyTurnover($scrapedData['companyTurnover']);
-        }
-
-        $this->entityManager->persist($company);
-        $this->entityManager->flush();
-
-        $this->redis = new Client([
-            'scheme' => 'tcp',
-            'host' => 'redis', // Replace with your Redis container's hostname
-            'port' => 6379, // Replace with the appropriate port
-        ]);
-        
-        $storedSession = $this->redis->get($clientIp);
-
-        $storedSession = json_decode($storedSession, true);
-
-        if($storedSession) {
-            $storedSession[] = (int)$registrationCode;
-
-            $storedSession = json_encode($storedSession);
-
-            $this->redis->set($clientIp, $storedSession, 'ex', 3600);
-        }
-        else {
-            $storedSession = [(int)$registrationCode];
-
-            $storedSession = json_encode($storedSession);
-
-            $this->redis->set($clientIp, $storedSession, 'ex', 3600);
-        }
-
-        var_dump($this->redis->get($clientIp));
-    }
-
-    return Command::SUCCESS;
-}
 
         private function processSearchResponse(Crawler $crawler, int $statusCode)
         {
@@ -113,7 +125,7 @@ class ScraperCommand extends Command
 
             if ($statusCode === Response::HTTP_OK)
             {
-
+                //Crawl url to the company page
                 $resultUrl = $this->crawlerFilterAttr($crawler, ".company-title", "href");
 
                 if (!is_null($resultUrl))
@@ -128,7 +140,8 @@ class ScraperCommand extends Command
 
                         $responseContent = $response->getContent();
                         $crawler = new Crawler($responseContent);
-
+                        //Crawll all the necessary components
+                        //Custom functions are realize to catch exception, because wned nothing is find (node list is empty) exception is thrown
                         $companyName = $this->crawlerFilterText($crawler, ".title");
 
                         $companyNumber = $this->crawlerFilterNextText($crawler, 'td:contains("Registration code")');
@@ -137,19 +150,14 @@ class ScraperCommand extends Command
 
                         $companyAddress = $this->crawlerFilterNextText($crawler, 'td:contains("Address")');
 
+                        //Realisation of the storing company`s phone
                         /* $phoneUrl = "https://rekvizitai.vz.lt" . $this->crawlerFilterNextAttr($crawler, 'td:contains("Mobile phone")', "src");
-
                         
-                        $directory = 'public/uploads/images/';
-                        if (!is_dir($directory)) {
-                            mkdir($directory, 0777, true);
-                        }
-
-
+                        
                         if ($phoneUrl || $phoneUrl !== "")
                         {
                             $companyPhone = $client->request("GET", $phoneUrl)->getContent();
-                            $phonePath = $directory . hash("md5", $companyName) . ".gif";
+                            $phonePath = 'public/images/' . hash("md5", $companyName) . ".gif";
                             file_put_contents($phonePath, $companyPhone);
                         }
                         else
@@ -163,13 +171,16 @@ class ScraperCommand extends Command
 
                         if ($companyTurnoverUrl)
                         {
+                            //If turnover exists, then it will be saved in 2D array using foreach function
                             $response = $client->request("GET", $companyTurnoverUrl);
 
-                            $responseContent = $response->getContent();
                             $responseStatusCode = $response->getStatusCode();
 
                             if ($responseStatusCode === Response::HTTP_OK)
                             {
+
+                                $responseContent = $response->getContent();
+
                                 $crawler = new Crawler($responseContent);
 
                                 $table = $this->crawlerFilter($crawler, ".postCodes.table.currency-table.finances-table");
@@ -192,19 +203,15 @@ class ScraperCommand extends Command
                             }
                         }
 
-                        //$turnover = json_encode($turnover);
-
-                        $companyData = [
-                            "companyName" => $companyName,
-                            "registrationCode" => $companyNumber,
-                            "companyVAT" => $companyVAT,
-                            "companyAddress" => $companyAddress,
-                            //"companyPhone" => $phonePath,
-                            "companyTurnover" => $turnover, ];
+                        $companyData = ["companyName" => $companyName, "registrationCode" => $companyNumber, "companyVAT" => $companyVAT, "companyAddress" => $companyAddress,
+                        //"companyPhone" => $phonePath,
+                        "companyTurnover" => $turnover, ];
+                        
                         return $companyData;
                     }
                 }
-                else {
+                else
+                {
                     return null;
                 }
             }
@@ -289,4 +296,4 @@ class ScraperCommand extends Command
                 return null;
             }
         }
-}
+    }

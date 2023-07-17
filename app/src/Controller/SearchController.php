@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Controller;
 
 use Symfony\Component\Console\Input\ArrayInput;
@@ -17,12 +16,10 @@ use Symfony\Component\Process\Process;
 //use Symfony\Component\Cache\Adapter\RedisAdapter;
 use Predis\Client;
 
-
 class SearchController extends AbstractController
 {
     private $redis;
     private $companyRepository;
-
 
     public function __construct(Client $redis, CompaniesRepository $companyRepository)
     {
@@ -31,12 +28,12 @@ class SearchController extends AbstractController
     }
 
     #[Route('/', name: 'search')]
-    public function proccessForm (Request $request, KernelInterface $kernel) {
-
-        //$redis = new Client();
+    public function proccessForm(Request $request, KernelInterface $kernel)
+    {
+        //Get arguments
         $registrationCodes = $request->get('registrationCode');
         $clientIp = $request->getClientIp();
-
+        //set default values
         $searchResult = [];
         $companyName = [];
         $companyCodes = [];
@@ -44,14 +41,17 @@ class SearchController extends AbstractController
         $companyAddress = [];
         $companyPhone = [];
         $companyTurnover = [];
-
+        //Get history of the search
         $sessionCodes = $this->getFromRedis($clientIp);
-
-        try {
-            foreach($sessionCodes as $code) {
+        //Display respective companies
+        try
+        {
+            foreach ($sessionCodes as $code)
+            {
                 $company = $this->getFromDatabase($code);
 
-                if ($company) {
+                if ($company)
+                {
                     $searchResult[] = $company['searchResult'];
                     $companyName[] = $company['companyName'];
                     $companyCodes[] = $code;
@@ -59,7 +59,8 @@ class SearchController extends AbstractController
                     $companyAddress[] = $company['companyAddress'];
                     $companyTurnover[] = $company['companyTurnover'];
                 }
-                else {
+                else
+                {
                     $searchResult[] = false;
                     $companyName[] = '';
                     $companyCodes[] = '';
@@ -69,143 +70,168 @@ class SearchController extends AbstractController
                 }
             }
         }
-        catch (\Exception $e) {
+        catch(\Exception $e)
+        {
 
         }
 
-        if (!is_null($registrationCodes)) {
+        if (!is_null($registrationCodes))
+        {
+            //Get numerous codes from search bar
             $registrationCodes = explode(',', $registrationCodes);
 
-        foreach($registrationCodes as $code) {
-            $code = trim($code);
-        }
-
-        foreach($registrationCodes as $registrationCode) {
-
-            if ($sessionCodes) {
-                $exists = in_array($registrationCode, $sessionCodes);
-            }
-            else {
-                $exists = false;
+            foreach ($registrationCodes as $code)
+            {
+                $code = trim($code);
             }
 
-            if ($exists) {
-                continue;
-            }
-            else {
-                if (!is_null($registrationCode)) {
+            foreach ($registrationCodes as $registrationCode)
+            {
+                //If code is already in sessionCodes, then it won`t be displayed a few times
+                if ($sessionCodes)
+                {
+                    $exists = in_array($registrationCode, $sessionCodes);
+                }
+                else
+                {
+                    $exists = false;
+                }
 
-                    $company = $this->getFromDatabase($registrationCode);
-                    if ($company) {
-                        
-                        $searchResult[] = $company['searchResult'];
-                        $companyName[] = $company['companyName'];
-                        $companyCodes[] = $registrationCode;
-                        $companyVAT[] = $company['companyVAT'];
-                        $companyAddress[] = $company['companyAddress'];
-                        $companyTurnover[] = $company['companyTurnover'];
-                    }
-                    else {
-                        $this->executeScraperCommand($kernel, $registrationCode, $clientIp);
-        
+                if ($exists)
+                {
+                    continue;
+                }
+                else
+                {
+                    if (!is_null($registrationCode))
+                    {
+
                         $company = $this->getFromDatabase($registrationCode);
-        
-                        if ($company) {
+                        //If company exists in the database, but don`t exists in Redis, then:
+                        if ($company)
+                        {
+
                             $searchResult[] = $company['searchResult'];
                             $companyName[] = $company['companyName'];
                             $companyCodes[] = $registrationCode;
                             $companyVAT[] = $company['companyVAT'];
                             $companyAddress[] = $company['companyAddress'];
                             $companyTurnover[] = $company['companyTurnover'];
+
+                            $this->addToRedis($clientIp, $registrationCode);
+
+                        }
+                        else
+                        {
+                            //Executing ScraperCommand
+                            $this->executeScraperCommand($kernel, $registrationCode, $clientIp);
+
+                            $company = $this->getFromDatabase($registrationCode);
+
+                            if ($company)
+                            {
+                                $searchResult[] = $company['searchResult'];
+                                $companyName[] = $company['companyName'];
+                                $companyCodes[] = $registrationCode;
+                                $companyVAT[] = $company['companyVAT'];
+                                $companyAddress[] = $company['companyAddress'];
+                                $companyTurnover[] = $company['companyTurnover'];
+                            }
                         }
                     }
+
                 }
-        
             }
-        }
         }
 
         $session = false;
-        if (count($companyCodes) > 0) {
+        if (count($companyCodes) > 0)
+        {
             $session = true;
         }
 
-        return $this->render('search/index.html.twig', [
-            'searchNumber' => count($searchResult),
-            'searchResult' => $searchResult,
-            'companyName' => $companyName,
-            'registrationCode' => $companyCodes,
-            'companyVAT' => $companyVAT,
-            'companyAddress' => $companyAddress,
-            'companyTurnover' => $companyTurnover,
-            'session' => $session,
-            //'companyPhone' => $companyPhone,
+        return $this->render('search/index.html.twig', ['searchNumber' => count($searchResult) , 'searchResult' => $searchResult, 'companyName' => $companyName, 'registrationCode' => $companyCodes, 'companyVAT' => $companyVAT, 'companyAddress' => $companyAddress, 'companyTurnover' => $companyTurnover, 'session' => $session,
+        //'companyPhone' => $companyPhone,
         ]);
 
     }
 
-    protected function setValue($dataArray, $parameter) {
-        try {
+    protected function setValue($dataArray, $parameter)
+    {
+        try
+        {
             return $dataArray[$parameter];
         }
-        catch (\Exception $e) {
+        catch(\Exception $e)
+        {
 
         }
 
         return 'No data';
     }
 
-    protected function getFromRedis ($key) {
-        $this->redis = new Client([
-            'scheme' => 'tcp',
-            'host' => 'redis', // Replace with your Redis container's hostname
-            'port' => 6379, // Replace with the appropriate port
+    protected function getFromRedis($key)
+    {
+        $this->redis = new Client(['scheme' => 'tcp', 'host' => 'redis',
+        'port' => 6379, 
         ]);
 
-        $storedSession = $this->redis->get($key);
+        $storedSession = $this
+            ->redis
+            ->get($key);
 
         $storedSession = json_decode($storedSession, true);
 
         return $storedSession;
     }
 
-    protected function getFromDatabase ($filter) {
-        $company = $this->companyRepository->findOneBy(['registrationCode' => (int)$filter]);
+    protected function addToRedis ($key, $value) {
+        $this->redis = new Client(['scheme' => 'tcp', 'host' => 'redis',
+        'port' => 6379, 
+        ]);
 
-            if ($company) {
-                $searchResult = true;
-                $companyName = $company->getCompanyName();
-                $companyVAT = $company->getCompanyVAT();
-                $companyAddress = $company->getCompanyAddress();
-                $companyTurnover = $company->getCompanyTurnover();
-            
+        $storedSession = $this->getFromRedis($key);
 
-        $company = [
-            'searchResult' => $searchResult,
-            'companyName' => $companyName,
-            'companyVAT' => $companyVAT,
-            'companyAddress' => $companyAddress,
-            'companyTurnover' => $companyTurnover
-        ];
+        $storedSession[] = $value;
+        $storedSession = json_encode($storedSession);
+
+        $this->redis->set($key, $storedSession, 'ex', 3600);
     }
-    else {
-        $company = null;
-    }
+
+    protected function getFromDatabase($filter)
+    {
+        $company = $this
+            ->companyRepository
+            ->findOneBy(['registrationCode' => (int)$filter]);
+
+        if ($company)
+        {
+            $searchResult = true;
+            $companyName = $company->getCompanyName();
+            $companyVAT = $company->getCompanyVAT();
+            $companyAddress = $company->getCompanyAddress();
+            $companyTurnover = $company->getCompanyTurnover();
+
+            $company = ['searchResult' => $searchResult, 'companyName' => $companyName, 'companyVAT' => $companyVAT, 'companyAddress' => $companyAddress, 'companyTurnover' => $companyTurnover];
+        }
+        else
+        {
+            $company = null;
+        }
 
         return $company;
     }
 
-    protected function executeScraperCommand(KernelInterface $kernel, $registrationCode, $clientIp) {
+    protected function executeScraperCommand(KernelInterface $kernel, $registrationCode, $clientIp)
+    {
         $application = new Application($kernel);
-        
-                        $command = $application->find('app:scraper');
-                
-                        $input = new ArrayInput([
-                            'registrationCode' => $registrationCode,
-                            'clientIp' => $clientIp,
-                        ]);
-                    
-                        $output = new BufferedOutput();
-                        $command->run($input, $output);
+
+        $command = $application->find('app:scraper');
+
+        $input = new ArrayInput(['registrationCode' => $registrationCode, 'clientIp' => $clientIp, ]);
+
+        $output = new BufferedOutput();
+        $command->run($input, $output);
     }
 }
+
