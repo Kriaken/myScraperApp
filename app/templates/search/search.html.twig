@@ -1,0 +1,52 @@
+{# templates/search/index.html.twig #}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search Page</title>
+    
+</head>
+<body>
+    <h1>Scrap Company Data</h1>
+    <form method="post" action="{{ path('search') }}">
+        <label for="registrationCode">Registration Code:</label>
+        <input type="text" id="registrationCode" name="registrationCode" required>
+        <button type="submit">Search</button>
+    </form>
+    {% if searchResult %}
+    <h2>Scraped Data:</h2>
+        <ul>
+        <li>Company name: {{companyName}}</li>
+        <li>Registration code: {{registrationCode}}</li>
+        <li>Company VAT: {{companyVAT}}</li>
+  
+        <li>Company address: {{companyAddress}}</li>
+        </ul>
+        {% if companyTurnover %}
+        <table>
+    <thead>
+        <tr>
+            {% for header in companyTurnover[0] %}
+                <th>{{ header }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in companyTurnover %}
+            <tr>
+                {% for cell in row %}
+                    <td>{{ cell }}</td>
+                {% endfor %}
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+        {% else %}
+<p>No data about turnover</p>
+{% endif %}
+    {% else %}
+<h2>No data found.</h2>
+
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.min.css">
+    <style>
+    .search-results__item {
+        margin-bottom: 20px;
+    }
+    </style>
+    <title>Company Scraper</title>
+</head>
+
+<body>
+    <header class="header">
+        <div class="container">
+            <h1 class="header__title">
+                Scraper
+            </h1>
+        </div>
+    </header>
+    <main class="main">
+        <div class="search-bar">
+            <div class="container">
+                <div class="search-bar__form">
+                    <form action="{{ path('search') }}" class="form__form" method="post">
+                        <label for="registrationCode" class="form__label">
+                            Search companies using registration code
+                        </label>
+                        <div class="form__input-container">
+                            <input placeholder="Input registration codes divided by comma" type="text" id="registrationCode" name="registrationCode" required class="form__input">
+                            <button class="form__submit" type="submit"><img src="images/search.svg" alt="search" class="form__submit-img"></button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% if session %}
+        <section class="search-results">
+        <div class="container">
+                <h3 class="search-results__title">
+                    Search results
+                </h3>
+                <div class="search-results__items">
+        {% for i in 0.. searchNumber - 1 %}
+        {% if searchResult[i] %}
+                    <details class="search-results__item">
+                        <summary class="search-item__summary">{{companyName[i]}}</summary>
+                        <div class="search-item__content">
+                            <h5 class="search-item__title">Company name: {{companyName[i]}}</h5>
+                            <ul class="search-item__list">
+                                <li class="search-list__item">Registration code: {{registrationCode[i]}}</li>
+                                <li class="search-list__item">Company VAT: {{companyVAT[i]}}</li>
+                                <li class="search-list__item">Company address: {{companyAddress[i]}}</li>
+                                <li class="search-list__item">Company phone: no data</li>
+                            </ul>
+
+                            {% if companyTurnover[i] %}
+                            <div class="search-item__table">
+                                <table class="search-table">
+                                    <caption class="search-table__caption">Historically Turnover</caption>
+                                    <thead>
+                                    <tr class="search-table__row">
+                                        {% for header in companyTurnover[i][0] %}
+                                            <td class="search-table__cell">{{ header }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {% for row in companyTurnover[i] %}
+                                    <tr class="search-table__row">
+                                        {% for cell in row %}
+                                            <td class="search-table__cell">{{ cell }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </details>
+                
+        {% endif %}
+        {% endfor %}
+
+                </div>
+            </div>
+        </section>
+        {% endif %}
+    </main>
+    <script src="js/main.min.js"></script>
+</body>
+
+</html>
